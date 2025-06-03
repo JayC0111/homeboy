@@ -162,7 +162,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch, nextTick, defineProps, onActivated } from 'vue'; // <-- 引入 onActivated
+import { ref, reactive, computed, onMounted, watch, nextTick, defineProps, onActivated } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, Search } from '@element-plus/icons-vue';
@@ -176,12 +176,9 @@ import {
   approveSalesOrder as approveSalesOrderAPI 
 } from '@/api/salesOrder';
 
-// --- 新增 defineOptions 来定义组件的 name ---
-// 这个 name 需要与 Layout.vue 中 keep-alive 的 include 数组中的名称匹配
 defineOptions({
-  name: 'CreateSalesOrder' // 或者 'SalesOrderDetailPage' 等，确保与 KeepAlive include 一致
+  name: 'CreateSalesOrder'
 });
-// --- 结束新增 ---
 
 const props = defineProps({
   mode: String 
@@ -243,6 +240,10 @@ const getStatusText = (statusValue) => {
 const customerSelectorVisible = ref(false);
 const productSelectorVisible = ref(false);
 
+// MODIFICATION START: Define relevant route names for this component
+const relevantRouteNames = ['CreateSalesOrder', 'EditSalesOrder', 'SalesOrderDetail'];
+// MODIFICATION END
+
 const resetFormForCreate = () => {
   console.log('[CreateSalesOrder.vue] resetFormForCreate called');
   Object.assign(formHeader, initialFormHeaderState());
@@ -258,10 +259,8 @@ const resetFormForCreate = () => {
 const loadSalespersonInfo = async () => {
   console.log('[CreateSalesOrder.vue] loadSalespersonInfo called. Current salespersonId:', formHeader.salespersonId);
   if (formHeader.salespersonId && formHeader.salespersonName && !(isEditMode.value && !formHeader.salespersonId)) {
-     // 如果是编辑模式且已有销售员信息，或者新建模式下已手动设置/加载了销售员，则可能不需要重新加载
-     // 但通常新建时会自动填充当前用户，编辑时显示订单上的销售员
+     // If already loaded or in edit mode with data, skip.
   }
-  // 只有在新建模式，或者编辑模式下销售员信息为空时，才尝试加载当前用户信息作为销售员
   if (!route.params.id || !formHeader.salespersonId) {
     formHeader.salespersonName = '加载中...';
     try {
@@ -292,12 +291,11 @@ const loadOrderData = async (orderId) => {
   console.log(`[CreateSalesOrder.vue] loadOrderData: Fetching order with ID: ${orderId}`);
   try {
     const res = await getSalesOrderDetail(orderId);
-    console.log('[CreateSalesOrder.vue] loadOrderData: API response for order detail:', JSON.parse(JSON.stringify(res, null, 2))); // 打印获取到的订单详情
+    console.log('[CreateSalesOrder.vue] loadOrderData: API response for order detail:', JSON.parse(JSON.stringify(res, null, 2)));
     if (res.code === 200 && res.data) {
       resetFormForCreate(); 
       Object.assign(formHeader, res.data);
       formHeader.totalAmount = Number(res.data.totalAmount) || 0;
-      // 确保销售员信息优先从订单数据加载，如果订单数据中没有，再考虑是否需要其他逻辑（当前已在loadSalespersonInfo中处理新建的情况）
       formHeader.salespersonId = res.data.salespersonId || ''; 
       formHeader.salespersonName = res.data.salespersonName || res.data.createdBy || '未知';
       
@@ -308,7 +306,7 @@ const loadOrderData = async (orderId) => {
         const unitPrice = Number(item.unitPrice) || 0;
         const quantity = Number(item.quantity) || 0;
         let lineTotal = Number(item.lineTotal);
-        if (isNaN(lineTotal) || (lineTotal === 0 && unitPrice * quantity !== 0 && quantity > 0)) { // 修复了数量为0时lineTotal不应重算的问题
+        if (isNaN(lineTotal) || (lineTotal === 0 && unitPrice * quantity !== 0 && quantity > 0)) {
             lineTotal = parseFloat((unitPrice * quantity).toFixed(2));
         }
         return { 
@@ -316,8 +314,8 @@ const loadOrderData = async (orderId) => {
             unitPrice, 
             quantity, 
             lineTotal,
-            outboundQuantity: Number(item.outboundQuantity) || 0, // 确保加载并转换为数字
-            shippedQuantity: Number(item.shippedQuantity) || 0   // 确保加载并转换为数字
+            outboundQuantity: Number(item.outboundQuantity) || 0,
+            shippedQuantity: Number(item.shippedQuantity) || 0 
         };
       });
       
@@ -328,56 +326,58 @@ const loadOrderData = async (orderId) => {
       } else if (formHeader.totalAmount === 0 && calculatedTotalFromLines !== 0) {
           formHeader.totalAmount = parseFloat(calculatedTotalFromLines.toFixed(2));
       }
-      // ElMessage.success('订单数据加载成功'); // 暂时注释掉，避免每次激活都弹窗
     } else { 
       ElMessage.error(res.message || '加载订单数据失败'); 
-      // router.push({ name: 'SalesOrderList' }); // 暂时注释，避免加载失败时意外跳转
     }
   } catch (error) { 
     console.error("[CreateSalesOrder.vue] loadOrderData_error:", error); 
     ElMessage.error(error.message || '加载订单数据时发生错误'); 
-    // router.push({ name: 'SalesOrderList' }); // 暂时注释
   } 
   finally { pageLoading.value = false; }
 };
 
 onMounted(() => {
-  console.log('[CreateSalesOrder.vue] Mounted. Route query mode:', route.query.mode, 'Props mode:', props.mode, 'Route params ID:', route.params.id);
+  console.log('[CreateSalesOrder.vue] Mounted. Route query mode:', route.query.mode, 'Props mode:', props.mode, 'Route params ID:', route.params.id, 'Route name:', route.name);
   const orderId = route.params.id;
-  if (orderId) { 
-    loadOrderData(orderId); 
-  } else { 
-    resetFormForCreate(); 
-    loadSalespersonInfo(); 
+  // MODIFICATION START: Check route name before initial load
+  if (relevantRouteNames.includes(route.name)) {
+    if (orderId) { 
+      loadOrderData(orderId); 
+    } else { 
+      resetFormForCreate(); 
+      loadSalespersonInfo(); 
+    }
+  } else {
+    console.log('[CreateSalesOrder.vue] Mounted, but route name', route.name, 'is not relevant. Initial load skipped by onMounted.');
   }
+  // MODIFICATION END
 });
 
-// --- 新增 onActivated 钩子 ---
 onActivated(() => {
   const orderId = route.params.id;
-  console.log('[CreateSalesOrder.vue] Activated. Current route params ID:', orderId, 'Props mode:', props.mode);
-  // 仅当存在 orderId (即非新建模式) 且组件是从缓存中激活时，才重新加载数据
-  // 避免在新建模式下 (orderId 为空) 或组件首次加载 (onMounted 已处理) 时重复加载
-  if (orderId) { 
-    console.log('[CreateSalesOrder.vue] Re-loading data due to activation for order ID:', orderId);
-    loadOrderData(orderId);
-  } else if (!orderId && (props.mode === undefined || props.mode === 'create')) {
-    // 如果是返回到“新建”状态（例如，用户点了“新建销售单”，然后离开又回来）
-    // 确保表单是干净的，并且销售员信息已加载（如果之前没加载的话）
-    console.log('[CreateSalesOrder.vue] Activated in create mode, ensuring form is reset and salesperson info loaded.');
-    resetFormForCreate();
-    loadSalespersonInfo();
+  console.log('[CreateSalesOrder.vue] Activated. Current route params ID:', orderId, 'Props mode:', props.mode, 'Current route name:', route.name);
+  // MODIFICATION START: Add route name check
+  if (relevantRouteNames.includes(route.name)) {
+    if (orderId) { 
+      console.log('[CreateSalesOrder.vue] Re-loading data due to activation for order ID:', orderId);
+      loadOrderData(orderId);
+    } else if (!orderId && (props.mode === undefined || props.mode === 'create')) {
+      console.log('[CreateSalesOrder.vue] Activated in create mode for relevant route, ensuring form is reset and salesperson info loaded.');
+      resetFormForCreate();
+      loadSalespersonInfo();
+    }
+  } else {
+    console.log('[CreateSalesOrder.vue] Activated, but route name', route.name, 'is not relevant. Load/reset skipped by onActivated.');
   }
+  // MODIFICATION END
 });
-// --- 结束新增 ---
 
 watch(() => props.mode, (newMode, oldMode) => { 
   console.log(`[CreateSalesOrder.vue] Watch props.mode changed from "${oldMode}" to "${newMode}"`); 
-  // 如果模式变化，可能需要重新评估页面状态或重新加载数据，特别是从 view 切换到 edit/approve
-  // 但通常路由参数变化（如 id）会是更主要的触发点
-  // 如果 props.mode 是通过 query 参数同步的，那么 route.fullPath 的 key 变化会处理
-  // 如果 props.mode 是父组件直接传递的，并且期望它变化时刷新数据，这里可以加逻辑
-  // 例如： if (route.params.id) loadOrderData(route.params.id);
+  // Add specific logic if mode change needs to trigger data reload for relevant routes
+  if (relevantRouteNames.includes(route.name) && route.params.id) {
+      // loadOrderData(route.params.id); // Example: reload if mode changes for an existing order
+  }
 });
 
 watch(() => formHeader.status, (newStatus, oldStatus) => { 
@@ -386,21 +386,20 @@ watch(() => formHeader.status, (newStatus, oldStatus) => {
 
 watch(() => route.params.id, (newId, oldId) => {
   console.log(`[CreateSalesOrder.vue] Watch route.params.id changed from "${oldId}" to "${newId}". Current route name: ${route.name}, props.mode: ${props.mode}`);
-  if (newId && newId !== oldId) { 
-    // 当组件实例被复用（例如，通过 :key="route.name" 而不是 route.fullPath 且组件在 keep-alive include 中）
-    // 且路由参数 id 发生变化时 (例如从 /sales/order/edit/1 导航到 /sales/order/edit/2)
-    // 需要重新加载数据。
-    // 如果 Layout.vue 中使用的是 :key="route.fullPath" 或 :key="route.path"，这个watch可能不是主要的数据加载触发点，
-    // 因为组件会被重新创建，onMounted 会执行。
-    // 但保留这个 watch 可以在某些特定路由配置和key策略下确保数据更新。
-    loadOrderData(newId); 
-  } else if (!newId && oldId && (route.name === 'CreateSalesOrder' || props.mode === 'create')) { 
-    // 从编辑/详情模式导航回新建模式（如果路由是这样设计的，例如通过清空id参数）
-    console.log('[CreateSalesOrder.vue] Navigated to create mode from existing order, resetting form.');
-    resetFormForCreate(); 
-    loadSalespersonInfo(); 
+  // MODIFICATION START: Add route name check
+  if (relevantRouteNames.includes(route.name)) {
+    if (newId && newId !== oldId) { 
+      loadOrderData(newId); 
+    } else if (!newId && oldId && (route.name === 'CreateSalesOrder' || props.mode === 'create')) { 
+      console.log('[CreateSalesOrder.vue] Navigated to create mode for relevant sales order route, resetting form.');
+      resetFormForCreate(); 
+      loadSalespersonInfo(); 
+    }
+  } else {
+    console.log('[CreateSalesOrder.vue] Watch route.params.id changed, but route name', route.name, 'is not relevant. Load/reset skipped by watcher.');
   }
-}, { immediate: false }); // immediate: false 因为 onMounted 会处理初始加载
+  // MODIFICATION END
+}, { immediate: false });
 
 const totalAmount = computed(() => {
   if (formHeader.id && (isViewMode.value || isApproveMode.value || isEditMode.value)) {
@@ -419,7 +418,6 @@ const calculateLineTotal = (row) => {
   if (typeof row.unitPrice === 'number' && typeof row.quantity === 'number') {
     row.lineTotal = parseFloat((row.unitPrice * row.quantity).toFixed(2));
   } else { row.lineTotal = 0; }
-  // 只有在非查看、非审核模式下，才根据行项目动态更新表头总金额
   if (!isViewMode.value && !isApproveMode.value) { 
       formHeader.totalAmount = parseFloat(formLines.value.reduce((sum, item) => sum + (item.lineTotal || 0), 0).toFixed(2));
   }
@@ -440,8 +438,8 @@ const handleProductSelect = (selectedItems) => {
         unitPrice: Number(product.salesPrice) || 0, 
         quantity: 1, 
         lineTotal: Number(product.salesPrice) || 0, 
-        outboundQuantity: 0, // 新增行项目时，确保有初始值
-        shippedQuantity: 0   // 新增行项目时，确保有初始值
+        outboundQuantity: 0,
+        shippedQuantity: 0 
       }); 
     });
     if (!isViewMode.value && !isApproveMode.value) { 
@@ -463,11 +461,11 @@ const validateFormsInternal = async () => {
 
   let valid = false;
   if (headerFormRef.value) { try { await headerFormRef.value.validate(); valid = true; } catch (error) { valid = false; } } 
-  else { return false; } // 如果表单ref不存在，则无法验证
+  else { return false; }
   if (!valid) return false;
 
   if (!isApproveMode.value && formLines.value.length === 0) { 
-     ElMessage.warning('请至少添加一个商品到销售单！'); return false; 
+      ElMessage.warning('请至少添加一个商品到销售单！'); return false; 
   }
   for (const item of formLines.value) { 
     if (!(Number(item.quantity) > 0 && Number(item.unitPrice) >= 0)) { 
@@ -477,8 +475,8 @@ const validateFormsInternal = async () => {
   return true;
 };
 const formatDateTimeToString = (dateObj) => {
-    if (!dateObj) return null; // 处理空日期的情况
-    const date = new Date(dateObj); // 确保是 Date 对象
+    if (!dateObj) return null;
+    const date = new Date(dateObj); 
     const year = date.getFullYear(); 
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0'); 
@@ -488,11 +486,9 @@ const formatDateTimeToString = (dateObj) => {
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 const preparePayload = () => { 
-  let finalOrderTime = formHeader.orderTime; // 如果用户选了就用用户选的
-  if (!finalOrderTime && !formHeader.id) { // 仅在新建且用户未选时，自动生成
+  let finalOrderTime = formHeader.orderTime;
+  if (!finalOrderTime && !formHeader.id) {
     finalOrderTime = formatDateTimeToString(new Date());
-  } else if (!finalOrderTime && formHeader.id) { // 编辑时如果之前有值，不要覆盖为当前时间，除非后端要求
-     // 保持 formHeader.orderTime 原样，如果它为 null 或 undefined，后端应处理
   }
 
   const calculatedTotalAmount = parseFloat(formLines.value.reduce((sum, item) => sum + (item.lineTotal || 0), 0).toFixed(2));
@@ -518,7 +514,7 @@ const preparePayload = () => {
         unitPrice: line.unitPrice, 
         quantity: line.quantity, 
         lineTotal: line.lineTotal,
-        outboundQuantity: line.outboundQuantity, // 确保提交时也包含这些字段
+        outboundQuantity: line.outboundQuantity,
         shippedQuantity: line.shippedQuantity
     })),
   };
@@ -527,7 +523,7 @@ const handleSaveDraft = async () => {
   if (isViewMode.value || isApproveMode.value) return;
   const isValid = await validateFormsInternal(); if (!isValid) return;
   const payload = preparePayload(); 
-  payload.status = 'DRAFT'; // 保存草稿时强制状态为 DRAFT
+  payload.status = 'DRAFT'; 
   
   loading.value = true;
   try {
@@ -536,7 +532,6 @@ const handleSaveDraft = async () => {
     else { res = await createSalesOrderAPI(payload); }
     if (res.code === 200 && res.data) {
       ElMessage.success(formHeader.id ? '草稿更新成功' : '草稿已保存');
-      // 更新整个表单数据以响应后端可能返回的更改 (如id, orderNo, status, items中的id等)
       Object.assign(formHeader, res.data);
       formLines.value = (res.data.items || []).map(item => ({ 
         ...item, 
@@ -562,19 +557,12 @@ const handleSubmitForApproval = async () => {
     { confirmButtonText: '确定提交', cancelButtonText: '取消', type: 'warning' }
   ).then(async () => {
     const payload = preparePayload(); 
-    // 提交审批前，如果当前是草稿，则先保存一次（或确保payload是最新的），然后状态设置为PENDING_APPROVAL
-    // 如果已经是其他状态，提交审批的API可能只是触发一个动作，而不是全量更新。
-    // 这里简化处理：总是准备完整payload，并设置目标状态。
     payload.status = 'PENDING_APPROVAL';
     
     loading.value = true;
     try {
       let res;
-      // 如果是已存在的草稿单，先更新内容再提交审批（或者让后端API处理状态变更）
-      // 如果是新单，直接创建并设置为待审批
       if (formHeader.id) { 
-        // 通常，DRAFT状态的订单会先更新内容，然后状态变为PENDING_APPROVAL
-        // 如果不是DRAFT，但UI允许“提交审批”按钮出现（例如特殊流程），后端API应能处理
         res = await updateSalesOrderAPI(formHeader.id, payload); 
       } else { 
         res = await createSalesOrderAPI(payload);
@@ -585,8 +573,7 @@ const handleSubmitForApproval = async () => {
         router.push({ name: 'SalesOrderList' }); 
       } else { 
         ElMessage.error(res.message || '提交审批失败'); 
-        // 如果提交失败，可能需要将前端状态回滚或保持当前编辑状态
-        if (res.data && res.data.status) { // 如果后端返回了新的状态
+        if (res.data && res.data.status) {
             formHeader.status = res.data.status;
         }
       }
@@ -620,18 +607,9 @@ const handlePerformApproval = async (isApproved) => {
       ElMessage.success(`订单已审核：${actionText}`);
       Object.assign(formHeader, res.data); 
       approvalData.comment = ''; 
-      // 根据审核结果导航
-      if (res.data.status === 'DRAFT') { // 如果打回草稿
-        // 停留在当前页面，但模式应变为编辑模式
-        // router.replace({ name: 'EditSalesOrder', params: { id: formHeader.id }, query: {} });
-        // 或者，如果希望用户能直接继续编辑，可能只需要更新本地状态，并移除ApproveMode相关的UI
-        // 这里简单地重新加载数据以反映状态变化，并让用户决定下一步操作
+      if (res.data.status === 'DRAFT') {
         loadOrderData(formHeader.id); 
-        // 如果props.mode是从路由来的，我们不能直接改props.mode。
-        // 最好的方式可能是导航到EditSalesOrder路由，如果路由配置是分开的。
-        // 如果是同一个组件，可能需要父组件或路由守卫来改变mode。
-        // 鉴于当前props.mode是路由参数决定的，打回DRAFT后，此页面不再是approveMode。
-      } else { // 审核通过或其他状态，返回列表页
+      } else {
         router.push({ name: 'SalesOrderList' }); 
       }
     } else { ElMessage.error(res.message || '审核操作失败'); }
@@ -646,12 +624,10 @@ const handlePerformApproval = async (isApproved) => {
 };
 
 const handleCancel = () => { 
-  // 考虑不同模式下的返回逻辑
   if (isViewMode.value || isApproveMode.value || isEditMode.value) {
-    router.push({ name: 'SalesOrderList' }); // 从查看、审核、编辑模式返回列表
+    router.push({ name: 'SalesOrderList' });
   } else {
-    // 新建模式下，可以询问是否放弃未保存的更改
-    if (formLines.value.length > 0 || formHeader.customerName) { // 简单判断是否有输入
+    if (formLines.value.length > 0 || formHeader.customerName) {
         ElMessageBox.confirm('表单内容尚未保存，确定要取消并返回列表吗？', '取消确认', {
             confirmButtonText: '确定返回',
             cancelButtonText: '继续编辑',
@@ -659,7 +635,7 @@ const handleCancel = () => {
         }).then(() => {
             router.push({ name: 'SalesOrderList' });
         }).catch(() => {
-            // 用户选择继续编辑，什么也不做
+            // User chose to continue editing
         });
     } else {
         router.push({ name: 'SalesOrderList' });
@@ -670,9 +646,9 @@ const handleCancel = () => {
 </script>
 
 <style scoped>
-.create-sales-order-page {} /* 可添加页面特定样式 */
-.el-form-item { margin-bottom: 18px; } /* 统一表单项间距 */
-.el-form-item .el-input, .el-form-item .el-select, .el-form-item .el-date-picker { width: 100%; } /* 使表单控件充满其栅格 */
+.create-sales-order-page {}
+.el-form-item { margin-bottom: 18px; }
+.el-form-item .el-input, .el-form-item .el-select, .el-form-item .el-date-picker { width: 100%; }
 .table-summary-footer { 
   margin-top: 20px; 
   text-align: right; 
@@ -682,17 +658,16 @@ const handleCancel = () => {
 .table-summary-footer span + span { margin-left: 30px; }
 .total-amount-value { 
   font-weight: bold; 
-  color: var(--error-color); /* 或 var(--primary-color) */
+  color: var(--error-color);
 }
 .modified-actions-footer { 
   margin-top: 20px; 
   padding-top: 20px; 
-  border-top: 1px solid var(--border-color-light, #e4e7ed); /* 使用 global.css 中的变量或默认值 */
-  /* 移除了负边距，如果需要撑满父容器的padding，则需要父容器配合 */
-  padding-left: 0; /* 如果希望与父padding对齐，则设为0，否则默认 */
+  border-top: 1px solid var(--border-color-light, #e4e7ed);
+  padding-left: 0; 
   padding-right: 0;
-  padding-bottom: 0; /* 通常底部按钮区域下方不需要额外padding */
-  border-radius: 0 0 4px 4px; /* 如果父容器是card */
+  padding-bottom: 0;
+  border-radius: 0 0 4px 4px;
   display: flex; 
   justify-content: flex-end; 
 }
